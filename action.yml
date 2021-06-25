@@ -1,0 +1,20 @@
+name: 'Maven Releaser'
+description: 'Release maven projects easily using this action'
+inputs:
+  project-pom-location:  # id of input
+    description: '`pom.xml` file location relative to the project root. Default: `./pom.xml`'
+    required: false
+    default: './pom.xml'
+  versioning:  # id of input
+    description: 'SemVer versioning - patch, minor, major. Default: `patch`'
+    required: false
+    default: 'patch'
+outputs:
+  message: # id of output
+    description: 'Output message of the release containing information about release or errors if any'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.project-pom-location }}
+    - ${{ inputs.versioning }}
