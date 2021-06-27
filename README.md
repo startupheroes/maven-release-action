@@ -42,4 +42,5 @@ organization/example-project tests has failed :red_circle:
   with:
     project-pom-location: './pom.xml'
     versioning: 'patch'
+    github-token: ${{ github.token }}
 ```

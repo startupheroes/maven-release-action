@@ -9,12 +9,59 @@ inputs:
     description: 'SemVer versioning - patch, minor, major. Default: `patch`'
     required: false
     default: 'patch'
+  github-token:
+    description: 'GitHub Token with read/write access'
+    required: true
 outputs:
   message: # id of output
     description: 'Output message of the release containing information about release or errors if any'
 runs:
-  using: 'docker'
-  image: 'Dockerfile'
-  args:
-    - ${{ inputs.project-pom-location }}
-    - ${{ inputs.versioning }}
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        git config user.email "actions@github.com"
+        git config user.name "GitHub Actions"
+    - shell: bash
+      run: npm install -g semver
+    - shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        latest_pom_snapshot=$(./mvnw -f ${{inputs.project-pom-location}} help:evaluate -D expression=project.version -q -D forceStdout)
+        # remove postfixes (e.g. -snapshot) from dev version
+        pom_version=${latest_pom_snapshot%%-*}
+        if [[ ${{ inputs.versioning }} == 'patch' ]]; then
+          release=$pom_version
+        else
+          release=$(semver "$pom_version" -i "$VERSIONING")
+        fi
+        next=$(semver "${release}" -i patch)
+        ./mvnw -f ${{inputs.project-pom-location}} scm:check-local-modification
+        if [ $? -ne 0 ]; then
+          echo "The build will stop as there is local modifications"
+        	echo "::set-output name=message::The build will stop as there is local modifications :thinking_face:"
+        	exit 1
+        fi
+        ./mvnw -f ${{inputs.project-pom-location}} versions:set -D newVersion="${release}"
+        git commit -am "Release ${release}"
+        if [ $? -ne 0 ]; then
+        	echo "Commit for preparing release has failed."
+        	echo "::set-output name=message::Commit for preparing release has failed :thinking_face:"
+        	exit 1
+        fi
+        ./mvnw -f ${{inputs.project-pom-location}} clean deploy scm:tag -P release \
+               -D tag="${release}" \
+               -D pushChanges=false \
+               -D dependency-check.skip
+        if [ $? -ne 0 ]; then
+        	echo "Deploy Failed"
+        	echo "::set-output name=message::Maven deploy failed :white_frowning_face: "
+        	exit 1
+        fi
+        ./mvnw -f "$project_pom" versions:set -D newVersion="${next}"-SNAPSHOT
+        git commit -am "Set development version ${next}-SNAPSHOT"
+        git push
+        git push --tags
+        echo "Release successfully finished."
+        echo "::set-output name=message::Release *finished!* :disco: *Repository:* $GITHUB_REPOSITORY *Release Version:* ${release}"
